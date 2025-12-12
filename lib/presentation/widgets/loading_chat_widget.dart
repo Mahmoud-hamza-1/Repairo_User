@@ -1,0 +1,19 @@
+
+import 'package:flutter/material.dart';
+import 'package:repairo_app_new/core/constants/app_sizes.dart';
+
+class LoadingWidget extends StatelessWidget {
+  const LoadingWidget({
+    super.key,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+        height: Sizes.getHeight(context),
+        width: Sizes.getWidth(context),
+        child: const Center(
+          child: CircularProgressIndicator(),
+        ));
+  }
+}

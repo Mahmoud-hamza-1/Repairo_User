@@ -1,0 +1,694 @@
+import 'package:repairo_app_new/business_logic/CreatingOrderCubit/creating_order_cubit.dart';
+import 'package:repairo_app_new/business_logic/ProvidedServicesCubit/provided_services_cubit.dart';
+import 'package:repairo_app_new/business_logic/ProvidedServicesCubit/provided_services_states.dart';
+import 'package:repairo_app_new/core/constants/app_constants.dart';
+import 'package:repairo_app_new/data/models/provided_services.dart';
+import 'package:repairo_app_new/data/models/service_model.dart';
+import 'package:repairo_app_new/data/repository/creating_order_repository.dart';
+import 'package:repairo_app_new/data/web_services/creating_order_webservice.dart';
+import 'package:repairo_app_new/presentation/screens/creating_order.dart';
+import 'package:repairo_app_new/presentation/widgets/cart_item_widget.dart';
+import 'package:repairo_app_new/presentation/widgets/custom_elevated_button.dart';
+import 'package:repairo_app_new/presentation/widgets/service_card_widget.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:get/get.dart';
+import 'package:get/get_core/src/get_main.dart';
+import 'package:line_icons/line_icon.dart';
+
+class ProvidedServicesScreen extends StatefulWidget {
+  final List<String>? selectedServices;
+  final String techId;
+  final String techname;
+  final String? date;
+  final String? time;
+  final Cart cart;
+
+  ProvidedServicesScreen({
+    super.key,
+    this.selectedServices,
+    required this.techId,
+    required this.techname,
+    this.date,
+    this.time,
+    Cart? cart, // استقبل nullable
+  }) : cart = cart ?? Cart();
+
+  @override
+  State<ProvidedServicesScreen> createState() => _ProvidedServicesScreenState();
+}
+
+class _ProvidedServicesScreenState extends State<ProvidedServicesScreen> {
+  List<RProvidedServices> services = [];
+  List<String> selectedServices = [];
+
+  @override
+  void initState() {
+    context.read<ProvidedServicesCubit>().fetchProvidedServices(
+      widget.techId,
+      widget.selectedServices ?? [],
+    );
+    super.initState();
+  }
+
+  // void toggleServiceSelection(String serviceId, bool selected) {
+  //   setState(() {
+  //     if (selected) {
+  //       selectedServices.add(serviceId);
+  //       print(selectedServices);
+  //     } else {
+  //       selectedServices.remove(serviceId);
+  //       print(selectedServices);
+  //     }
+  //   });
+  // }
+
+  RProvidedServices convertToProvidedService(RServiceData service) {
+    return RProvidedServices(
+      minPrice: service.minPrice,
+      maxPrice: service.maxPrice,
+      image: service.image,
+      id: service.id,
+      serviceName: service.name,
+      // description: service.description,
+      servicePrice: service.price, // أو service.basePrice إذا عندك هيك
+      // إذا في حقول إضافية بـ RProvidedService مو موجودة بـ RService
+      // ممكن تحط قيم افتراضية أو تجيبها من مكان تاني
+      // professionalId: "", // هون عبيها حسب الحاجة
+    );
+  }
+
+  void addToCart(dynamic service) {
+    if (service is RServiceData) {
+      final providedService = convertToProvidedService(service);
+      widget.cart.add(providedService);
+    } else if (service is RProvidedServices) {
+      widget.cart.add(service);
+    }
+  }
+
+  void showCartBottomSheet(BuildContext context, Cart cart) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setState) {
+            // الشرط الرئيسي: إذا كانت السلة فارغة، قم بإخفاء الـ sheet
+            if (cart.isEmpty) {
+              Navigator.of(context).pop();
+              return Container(); // ارجع حاوية فارغة
+            }
+
+            return Directionality(
+              textDirection: TextDirection.rtl,
+              child: DraggableScrollableSheet(
+                initialChildSize: 0.2,
+                minChildSize: 0.1,
+                //maxChildSize: 0.8,
+                expand: false,
+                builder: (context, scrollController) {
+                  return Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.vertical(
+                        top: Radius.circular(25.0),
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              "المجموع: ${cart.total.toStringAsFixed(2)} ليرة",
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                fontFamily: "Cairo",
+                              ),
+                            ),
+                            GestureDetector(
+                              onTap: () {
+                                // Get.to(SuggestedServicesScreen(
+                                //     cart: cart, suggestion_list: servicess));
+                                //Get.to(SchedulePage(cart: cart));
+                              },
+                              child: Container(
+                                decoration: const BoxDecoration(
+                                  color: Colors.teal,
+                                  borderRadius: BorderRadius.all(
+                                    Radius.circular(16),
+                                  ),
+                                ),
+                                child: const Padding(
+                                  padding: EdgeInsets.symmetric(
+                                    vertical: 16.0,
+                                    horizontal: 24,
+                                  ),
+                                  child: Text(
+                                    "التالي",
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontFamily: "Cairo",
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        Expanded(
+                          child: ListView.builder(
+                            controller: scrollController,
+                            itemCount: cart.items.length,
+                            itemBuilder: (context, index) {
+                              final item = cart.items[index];
+                              return ListTile(
+                                title: Text(
+                                  item.service.name ?? "خدمة",
+                                  style: const TextStyle(fontFamily: "Cairo"),
+                                ),
+                                subtitle: Text(
+                                  "x${item.quantity}",
+                                  style: const TextStyle(fontFamily: "Cairo"),
+                                ),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(
+                                        Icons.remove_circle_outline,
+                                      ),
+                                      onPressed: () {
+                                        // قم بإنقاص الكمية هنا
+                                        cart.decrement(item.service);
+                                        // ثم قم بتحديث الـ state
+                                        setState(() {});
+                                      },
+                                    ),
+                                    Text("${item.quantity}"),
+                                    IconButton(
+                                      icon: const Icon(
+                                        Icons.add_circle_outline,
+                                      ),
+                                      onPressed: () {
+                                        // قم بزيادة الكمية هنا
+                                        cart.add(item.service);
+                                        // ثم قم بتحديث الـ state
+                                        setState(() {});
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        // appBar: AppBar(
+        // title: Text("${widget.techname}'s services ",
+        //     style: TextStyle(color: Colors.white)),
+        //   backgroundColor: const Color(0xFF6F4EC9),
+        //   centerTitle: true,
+        // ),
+        body: BlocBuilder<ProvidedServicesCubit, ProvidedServicesStates>(
+          builder: (context, state) {
+            if (state is ProvidedServicesSuccess) {
+              services = (state).providedservices;
+              selectedServices = widget.selectedServices ?? [];
+              print(selectedServices);
+              return Padding(
+                padding: const EdgeInsets.only(top: 60),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8, right: 8),
+                      child: Row(
+                        children: [
+                          GestureDetector(
+                            onTap: () {
+                              Get.back();
+                            },
+                            child: CircleAvatar(
+                              radius: 14,
+                              backgroundColor: Colors.grey.shade500,
+                              child: const Icon(
+                                Icons.arrow_back_ios_new_sharp,
+                                size: 16,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                          SizedBox(width: 10.w),
+                          Text(
+                            "  خدمات المهني ${widget.techname}",
+                            style: const TextStyle(
+                              color: Colors.black,
+                              fontFamily: "Cairo",
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: ListView.builder(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: services.length,
+                        itemBuilder: (context, index) {
+                          final service = services[index];
+                          final isSelected = selectedServices.contains(
+                            service.id,
+                          );
+                          //final isSelected = service.selected;
+                          print(isSelected);
+
+                          return Container(
+                            child: Column(
+                              children: [
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    // صورة الخدمة
+                                    SizedBox(
+                                      width: 70,
+                                      height: 70,
+                                      child: ClipRRect(
+                                        borderRadius: BorderRadius.circular(8),
+                                        child: Image.network(
+                                          service.image!.replaceFirst(
+                                            "127.0.0.1",
+                                            AppConstants.baseaddress,
+                                          ),
+                                          fit: BoxFit.cover,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+
+                                    // النصوص
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            service.name!,
+                                            style: const TextStyle(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.bold,
+                                              fontFamily: "Cairo",
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            "خدمة جديدة تستطيع تلبية احتياجات المستخدمين اللذين يرغبون بالاستفادة من الخدمات الموجودة على النظام ومن ثم استخدامها",
+                                            style: TextStyle(
+                                              fontFamily: "Cairo",
+                                              fontSize: 13,
+                                              color: Colors.grey[700],
+                                            ),
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          const SizedBox(height: 16),
+                                          Row(
+                                            children: [
+                                              Text(
+                                                "${service.price} ليرة",
+                                                style: const TextStyle(
+                                                  fontSize: 14,
+                                                  fontWeight: FontWeight.w600,
+                                                  fontFamily: "Cairo",
+                                                  color: Colors.teal,
+                                                ),
+                                              ),
+                                              const Spacer(),
+                                              !widget.cart.contains(service)
+                                                  ? GestureDetector(
+                                                      onTap: () {
+                                                        setState(() {
+                                                          addToCart(service);
+                                                          // widget.cart
+                                                          //     .add(service);
+                                                        });
+                                                        showCartBottomSheet(
+                                                          context,
+                                                          widget.cart,
+                                                        );
+
+                                                        // if (cart.items.isNotEmpty) {
+                                                        //   _showCart();
+                                                        // }
+                                                      },
+                                                      child: Padding(
+                                                        padding:
+                                                            const EdgeInsets.only(
+                                                              left: 4,
+                                                            ),
+                                                        child: Container(
+                                                          // width: 50.w,
+                                                          // height: 35,
+                                                          decoration: const BoxDecoration(
+                                                            color: Colors.teal,
+                                                            borderRadius:
+                                                                BorderRadius.all(
+                                                                  Radius.circular(
+                                                                    10,
+                                                                  ),
+                                                                ),
+                                                          ),
+                                                          child: const Center(
+                                                            child: Padding(
+                                                              padding:
+                                                                  EdgeInsets.all(
+                                                                    8.0,
+                                                                  ),
+                                                              child: Row(
+                                                                children: [
+                                                                  Text(
+                                                                    "أضف",
+                                                                    style: TextStyle(
+                                                                      color: Colors
+                                                                          .white,
+                                                                      fontFamily:
+                                                                          "Cairo",
+                                                                      fontSize:
+                                                                          13,
+                                                                      fontWeight:
+                                                                          FontWeight
+                                                                              .bold,
+                                                                    ),
+                                                                  ),
+                                                                  LineIcon(
+                                                                    Icons.add,
+                                                                    color: Colors
+                                                                        .white,
+                                                                    size: 16,
+                                                                  ),
+                                                                ],
+                                                              ),
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    )
+                                                  : Padding(
+                                                      padding:
+                                                          const EdgeInsets.only(
+                                                            left: 4,
+                                                          ),
+                                                      child: Center(
+                                                        child: Padding(
+                                                          padding:
+                                                              const EdgeInsets.all(
+                                                                8.0,
+                                                              ),
+                                                          child: Row(
+                                                            children: [
+                                                              GestureDetector(
+                                                                onTap: () {
+                                                                  setState(() {
+                                                                    widget.cart
+                                                                        .decrement(
+                                                                          service,
+                                                                        );
+                                                                  });
+                                                                  showCartBottomSheet(
+                                                                    context,
+                                                                    widget.cart,
+                                                                  );
+                                                                },
+                                                                child: Container(
+                                                                  decoration: BoxDecoration(
+                                                                    border: Border.all(
+                                                                      width:
+                                                                          0.5,
+                                                                      color: Colors
+                                                                          .grey,
+                                                                    ),
+                                                                    borderRadius:
+                                                                        BorderRadius.circular(
+                                                                          30,
+                                                                        ),
+                                                                  ),
+                                                                  child: const Icon(
+                                                                    Icons
+                                                                        .remove,
+                                                                    color: Colors
+                                                                        .teal,
+                                                                    size: 18,
+                                                                  ),
+                                                                ),
+                                                              ),
+                                                              Padding(
+                                                                padding:
+                                                                    const EdgeInsets.symmetric(
+                                                                      horizontal:
+                                                                          4,
+                                                                    ),
+                                                                child: Text(
+                                                                  "${widget.cart.getQuantity(service)}",
+                                                                  style: const TextStyle(
+                                                                    color: Colors
+                                                                        .black,
+                                                                    fontFamily:
+                                                                        "Cairo",
+                                                                    fontSize:
+                                                                        16,
+                                                                  ),
+                                                                ),
+                                                              ),
+                                                              GestureDetector(
+                                                                onTap: () {
+                                                                  setState(() {
+                                                                    addToCart(
+                                                                      service,
+                                                                    );
+                                                                    // widget
+                                                                    //     .cart
+                                                                    //     .add(
+                                                                    //         service);
+                                                                  });
+                                                                  showCartBottomSheet(
+                                                                    context,
+                                                                    widget.cart,
+                                                                  );
+                                                                },
+                                                                child: Container(
+                                                                  decoration: BoxDecoration(
+                                                                    border: Border.all(
+                                                                      width:
+                                                                          0.5,
+                                                                      color: Colors
+                                                                          .grey,
+                                                                    ),
+                                                                    borderRadius:
+                                                                        BorderRadius.circular(
+                                                                          30,
+                                                                        ),
+                                                                  ),
+                                                                  child: const Icon(
+                                                                    Icons.add,
+                                                                    color: Colors
+                                                                        .teal,
+                                                                    size: 18,
+                                                                  ),
+                                                                ),
+                                                              ),
+                                                            ],
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+
+                                    // ElevatedButton(
+                                    //   style: ElevatedButton.styleFrom(
+                                    //     shape: StadiumBorder(),
+                                    //     padding: EdgeInsets.symmetric(
+                                    //         horizontal: 16, vertical: 8),
+                                    //   ),
+                                    //   onPressed: () {
+                                    //     setState(() {
+                                    //       cart.add(service);
+                                    //     });
+                                    //     if (cart.items.isNotEmpty) {
+                                    //       _showCart();
+                                    //     }
+                                    //   },
+                                    //   child: Text("أضف"),
+                                    // ),
+                                  ],
+                                ),
+                                const Divider(),
+                              ],
+                            ),
+                          );
+                          //  ServiceCard(
+                          //     service: service,
+                          //     isSelected: isSelected!,
+                          //     onToggle: toggleServiceSelection);
+                        },
+                      ),
+                    ),
+                    Container(
+                      color: Colors.grey.shade200,
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        children: [
+                          GestureDetector(
+                            onTap: () {
+                              // showCartBottomSheet(context, widget.cart);
+                            },
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.start,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  "المجموع: 1200 ليرة",
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.grey,
+                                    decoration: TextDecoration.lineThrough,
+                                    fontWeight: FontWeight.bold,
+                                    fontFamily: "Cairo",
+                                  ),
+                                ),
+                                Row(
+                                  children: [
+                                    Text(
+                                      "المجموع: ${widget.cart.total.toStringAsFixed(2)} ليرة",
+                                      style: const TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                        fontFamily: "Cairo",
+                                      ),
+                                    ),
+                                    SizedBox(width: 5.w),
+                                    const Icon(Icons.keyboard_arrow_up_rounded),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          const Spacer(),
+                          GestureDetector(
+                            onTap: () {
+                              Get.to(
+                                () => BlocProvider(
+                                  create: (context) => CreatingOrderCubit(
+                                    CreatingOrderRepository(
+                                      CreatingOrderWebservice(),
+                                    ),
+                                  ),
+                                  child: CreateRequestScreen(
+                                    time: widget.time,
+                                    date: widget.date,
+                                    id: widget.techId,
+                                    servicesids: widget.cart.items
+                                        .map((item) => item.service.id!)
+                                        .toList(),
+                                    servicesquantities: widget.cart.items
+                                        .map((item) => item.quantity.toString())
+                                        .toList(),
+                                  ),
+                                ),
+                              );
+                            },
+                            child: Container(
+                              decoration: const BoxDecoration(
+                                color: Colors.teal,
+                                borderRadius: BorderRadius.all(
+                                  Radius.circular(16),
+                                ),
+                              ),
+                              child: const Padding(
+                                padding: EdgeInsets.symmetric(
+                                  vertical: 16.0,
+                                  horizontal: 24,
+                                ),
+                                child: Text(
+                                  "التالي",
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontFamily: "Cairo",
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    // Padding(
+                    //   padding: const EdgeInsets.all(16.0),
+                    //   child: CustomElevatedButton(
+                    //     onpressed: () {
+                    //       Get.to(() => BlocProvider(
+                    //             create: (context) => CreatingOrderCubit(
+                    //                 CreatingOrderRepository(
+                    //                     CreatingOrderWebservice())),
+                    //             child: CreateRequestScreen(
+                    //               id: widget.techId,
+                    //               services: widget.selectedServices,
+                    //             ),
+                    //           ));
+                    //     },
+                    //     text: "Next",
+                    //     active: selectedServices.isNotEmpty,
+                    //   ),
+                    // )
+                  ],
+                ),
+              );
+            } else if (state is ProvidedServicesLoading) {
+              return const Center(
+                child: CircularProgressIndicator(color: Colors.teal),
+              );
+            } else if (state is ProvidedServicesError) {
+              return const Center(child: Text("Error Happened"));
+            }
+            return const Center(child: Text("No Data"));
+
+            //  ListView.builder(
+            //   padding: const EdgeInsets.all(16),
+            //   itemCount: services.length,
+            //   itemBuilder: (context, index) {
+            //     final service = services[index];
+            //     return Center(child: Text("NO Data"))
+            //   },
+            // );
+          },
+        ),
+      ),
+    );
+  }
+}
